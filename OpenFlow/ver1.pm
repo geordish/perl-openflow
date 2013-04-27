@@ -47,9 +47,17 @@ use enum qw(:OFPT_
                 QUEUE_GET_CONFIG_REPLY
     );
 
+use enum qw(:OFPR_
+    NO_MATCH
+    ACTION
+);
+
 my $datapath_id;
 my $buffers;
 my $tables;
+my $flags;
+my $miss_send_len;
+
 my $ports = {};
 
 
@@ -126,6 +134,53 @@ sub request_config() {
     $sock->send($response);
 }
 
+sub process_config() {
+    my $self = shift;
+    my $sock = shift;
+    my $ofp_header = shift;
+    my $data = shift;
+    
+    my $unpacked = $c->unpack('ofp_switch_config', $data);
+
+    $flags = $unpacked->{flags};
+    $miss_send_len = $unpacked->{miss_send_len};
+}
+
+sub request_flows() {
+    my $self = shift;
+    my $sock = shift;
+    my $ofp_header = shift;
+    my $data = shift;
+
+#struct ofp_match {
+#uint32_t wildcards;
+#uint16_t in_port;
+#uint8_t dl_src[OFP_ETH_ALEN];
+#uint8_t dl_dst[OFP_ETH_ALEN];
+#uint16_t dl_vlan;
+#uint8_t dl_vlan_pcp;
+#uint8_t pad1[1];
+#uint16_t dl_type;
+#uint8_t nw_tos;
+#uint8_t nw_proto;
+#uint8_t pad2[2];
+#uint32_t nw_src;
+#uint32_t nw_dst;
+#uint16_t tp_src;
+#uint16_t tp_dst;
+#};
+
+
+#struct ofp_flow_stats_request {
+#    #struct ofp_match match;
+#    uint8_t table_id;
+#    uint8_t pad;
+#    uint16_t out_port;
+#};
+
+
+
+}
 
 sub packet_in() {
     my $self = shift;
@@ -134,7 +189,11 @@ sub packet_in() {
     my $data = shift;
 
     my $unpacked = $c->unpack('ofp_packet_in', $data);
-    print Dumper $unpacked;
+#    print Dumper $unpacked;
+
+    if ($unpacked->{reason} == OFPR_NO_MATCH) {
+        print "Looking for a match..\n";
+    }
 }
 
 

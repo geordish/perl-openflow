@@ -56,3 +56,9 @@ struct ofp_action_header {
     unsigned short len;
     unsigned char pad[4];
 };
+
+struct ofp_switch_config {
+    unsigned short flags;
+    unsigned short miss_send_len;
+};
+

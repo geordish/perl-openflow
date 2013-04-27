@@ -12,8 +12,6 @@ use Data::Dumper;
 use Data::Hexdumper;
 use IO::Select;
 
-
-
 use enum qw(:OFPT_
                 HELLO
                 ERROR
@@ -103,7 +101,7 @@ while(1)
                 $sock->recv($data,$ofp_header->{length}-8);
             }
 
-            process_packet($sock, $ofp_header, $data);
+            &process_packet($sock, $ofp_header, $data);
         }
     }
 }
@@ -114,6 +112,7 @@ sub process_packet() {
     my $ofp_header = shift;
     my $data = shift;
 
+    # Get reference to OF object for this switch
     my $obj;
     if (!defined $of_switches->{$sock->peerhost()}->{$sock->peerport()}->{obj}) {
         $obj = OpenFlowFactory->instantiate($ofp_header->{version});
@@ -126,17 +125,14 @@ sub process_packet() {
         $obj->hello($sock, $ofp_header);
     } elsif ($ofp_header->{type} == OFPT_FEATURES_REPLY) {
         $obj->process_features($sock, $ofp_header, $data);
-
-        print "Datapath ID: " . $obj->get_formatted_datapath_id() . "\n";
-        print "Tables: " . $obj->get_tables() . "\n";
-        print "Buffers: " . $obj->get_buffers() . "\n";
-
+        print "Switch Connected. Datapath ID: " . $obj->get_formatted_datapath_id() . "\n";
     } elsif ($ofp_header->{type} == OFPT_ECHO_REQUEST) {
         $obj->echo_reply($sock, $ofp_header);
     } elsif ($ofp_header->{type} == OFPT_PACKET_IN) {
-        packet_in($sock, $ofp_header, $data);
+        $obj->packet_in($sock, $ofp_header, $data);
+    } elsif ($ofp_header->{type} == OFPT_GET_CONFIG_REPLY) {
+        $obj->process_config($sock, $ofp_header, $data);
     } else {
         print Dumper($ofp_header);
     }
-
 }
