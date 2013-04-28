@@ -220,10 +220,11 @@ sub flood() {
     my $in_port = shift;
     my $ofp_header = shift;
 
-    my $output = {type => OFPAT_OUTPUT, len => 8, port => OFPP_FLOOD };
-    my $ofp_packet_out = {buffer_id => $buffer_id, in_port => $in_port, actions_len => 8}; #, actions => $output};
 
-    my $ofp_action_output = $c->pack('ofp_action_output', $output);
+print STDOUT "poop";
+
+    my $ofp_action_output = create_ofp_action_output($self, OFPP_FLOOD);
+    my $ofp_packet_out = {buffer_id => $buffer_id, in_port => $in_port, actions_len => length($ofp_action_output)};
 
     $ofp_packet_out = $c->pack('ofp_packet_out', $ofp_packet_out);
     $ofp_packet_out = pack ("C16", unpack("C8", $ofp_packet_out), unpack("C8", $ofp_action_output));
@@ -233,6 +234,16 @@ sub flood() {
 
     $self->{sock}->send($response);
 
+}
+
+sub create_ofp_action_output () {
+    my $self = shift;
+    my $port = shift;
+#    my $max_len = shift || 0;
+    my $max_len =  0;
+
+    my $output = {type => OFPAT_OUTPUT, len => 8, port => $port, max_len => $max_len };
+    return $c->pack('ofp_action_output', $output);
 }
 
 sub get_datapath_id () {

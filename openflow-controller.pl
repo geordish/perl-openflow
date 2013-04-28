@@ -15,35 +15,8 @@ use IO::Select;
 
 Getopt::Mixed::init( 'm=s module>m');
 
-use enum qw(:OFPT_
-                HELLO
-                ERROR
-                ECHO_REQUEST
-                ECHO_REPLY
-                EXPERIMENTER
-                FEATURES_REQUEST
-                FEATURES_REPLY
-                GET_CONFIG_REQUEST
-                GET_CONFIG_REPLY
-                SET_CONFIG
-                PACKET_IN
-                FLOW_REMOVED
-                PORT_STATUS
-                PACKET_OUT
-                FLOW_MOD
-                GROUP_MOD
-                PORT_MOD
-                TABLE_MOD
-                STATS_REQUEST
-                STATS_REPLY
-                BARRIER_REQUEST
-                BARRIER_REPLY
-                QUEUE_GET_CONFIG_REQUEST
-                QUEUE_GET_CONFIG_REPLY
-    );
-
 my $of_module;
-my $of_switches = {};
+#my $of_switches;
 
 while (my($option, $value, $pretty) = Getopt::Mixed::nextOption()) {
     OPTION: {
@@ -102,8 +75,8 @@ while(1)
         if ($sock == $serversocket) {
             my $a = $serversocket->accept();
 
-            $of_switches->{$a->peerhost()}->{$a->peerport()}->{socket} = $a;
-            $of_switches->{$a->peerhost()}->{$a->peerport()}->{obj} = undef;
+ #           $of_switches->{$a->peerhost()}->{$a->peerport()}->{socket} = $a;
+ #           $of_switches->{$a->peerhost()}->{$a->peerport()}->{obj} = undef;
 
             $sockselect->add($a);
 
@@ -121,38 +94,7 @@ while(1)
                 $sock->recv($data,$ofp_header->{length}-8);
             }
 
-            &process_packet($sock, $ofp_header, $data);
+            $of_class->process_packet($sock, $ofp_header, $data);
         }
-    }
-}
-
-
-sub process_packet() {
-    my $sock = shift;
-    my $ofp_header = shift;
-    my $data = shift;
-
-    # Get reference to OF object for this switch
-    my $obj;
-    if (!defined $of_switches->{$sock->peerhost()}->{$sock->peerport()}->{obj}) {
-        $obj = OpenFlowFactory->instantiate($ofp_header->{version}, $sock);
-        $of_switches->{$sock->peerhost()}->{$sock->peerport()}->{obj} = $obj;
-    } else {
-       $obj =  $of_switches->{$sock->peerhost()}->{$sock->peerport()}->{obj};
-    }
-
-    if ($ofp_header->{type} == OFPT_HELLO) {
-        $obj->hello($ofp_header);
-    } elsif ($ofp_header->{type} == OFPT_FEATURES_REPLY) {
-        $obj->process_features($ofp_header, $data);
-        print "Switch Connected. Datapath ID: " . $obj->get_formatted_datapath_id() . "\n";
-    } elsif ($ofp_header->{type} == OFPT_ECHO_REQUEST) {
-        $obj->echo_reply($ofp_header);
-    } elsif ($ofp_header->{type} == OFPT_PACKET_IN) {
-        $of_class->packet_in($obj, $ofp_header, $data);
-    } elsif ($ofp_header->{type} == OFPT_GET_CONFIG_REPLY) {
-        $obj->process_config($ofp_header, $data);
-    } else {
-        print Dumper($ofp_header);
     }
 }
