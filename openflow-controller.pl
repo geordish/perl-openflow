@@ -16,7 +16,6 @@ use IO::Select;
 Getopt::Mixed::init( 'm=s module>m');
 
 my $of_module;
-#my $of_switches;
 
 while (my($option, $value, $pretty) = Getopt::Mixed::nextOption()) {
     OPTION: {
@@ -32,6 +31,7 @@ die "No module loaded speficied by -m\n" unless $of_module;
 
 my $location = "modules/$of_module.pm";
 my $of_class = "OpenFlow::Modules::$of_module";
+
 
 if (-e $location) {
     require $location;
@@ -74,9 +74,6 @@ while(1)
     foreach my $sock (@$ready) {
         if ($sock == $serversocket) {
             my $a = $serversocket->accept();
-
- #           $of_switches->{$a->peerhost()}->{$a->peerport()}->{socket} = $a;
- #           $of_switches->{$a->peerhost()}->{$a->peerport()}->{obj} = undef;
 
             $sockselect->add($a);
 
