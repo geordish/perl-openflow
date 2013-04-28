@@ -5,12 +5,15 @@ use warnings;
 
 use OpenFlowFactory;
 
+use Getopt::Mixed;
 use IO::Socket::INET;
 use IO::Socket::SSL;
 use Convert::Binary::C;
 use Data::Dumper;
 use Data::Hexdumper;
 use IO::Select;
+
+Getopt::Mixed::init( 'm=s module>m');
 
 use enum qw(:OFPT_
                 HELLO
@@ -39,8 +42,31 @@ use enum qw(:OFPT_
                 QUEUE_GET_CONFIG_REPLY
     );
 
-my ($serversocket,$client_socket);
-my ($peeraddress,$peerport);
+my $of_module;
+my $of_switches = {};
+
+while (my($option, $value, $pretty) = Getopt::Mixed::nextOption()) {
+    OPTION: {
+        $option eq 'm' and do {
+            $of_module = $value;
+
+            last OPTION;
+        };
+    }
+}
+Getopt::Mixed::cleanup();
+die "No module loaded speficied by -m\n" unless $of_module;
+
+my $location = "modules/$of_module.pm";
+my $of_class = "OpenFlow::Modules::$of_module";
+
+if (-e $location) {
+    require $location;
+} else {
+    die "$of_module is not a valid module\n";
+}
+
+$of_class->new();
 
 my $c = Convert::Binary::C->new( ByteOrder => 'BigEndian',
                                  LongSize  => 4,
@@ -48,12 +74,7 @@ my $c = Convert::Binary::C->new( ByteOrder => 'BigEndian',
 
 $c->parse_file('openflow.h');
 
-$c->tag('ofp_switch_features.datapath_id', Format => 'Binary');
-$c->tag('ofp_phy_port.hw_addr', Format => 'Binary');
-$c->tag('ofp_phy_port.name', Format => 'String');
-
-
-$serversocket = new IO::Socket::INET (
+my $serversocket = new IO::Socket::INET (
 #$socket = new IO::Socket::SSL (
         LocalHost => '127.0.0.1',
         LocalPort => '6633',
@@ -70,7 +91,6 @@ print "SERVER Waiting for client connection on port 6633\n";
 my $sockselect = IO::Select->new();
 $sockselect->add($serversocket);
 
-my $of_switches = {};
 
 while(1)
 {
@@ -115,23 +135,23 @@ sub process_packet() {
     # Get reference to OF object for this switch
     my $obj;
     if (!defined $of_switches->{$sock->peerhost()}->{$sock->peerport()}->{obj}) {
-        $obj = OpenFlowFactory->instantiate($ofp_header->{version});
+        $obj = OpenFlowFactory->instantiate($ofp_header->{version}, $sock);
         $of_switches->{$sock->peerhost()}->{$sock->peerport()}->{obj} = $obj;
     } else {
        $obj =  $of_switches->{$sock->peerhost()}->{$sock->peerport()}->{obj};
     }
 
     if ($ofp_header->{type} == OFPT_HELLO) {
-        $obj->hello($sock, $ofp_header);
+        $obj->hello($ofp_header);
     } elsif ($ofp_header->{type} == OFPT_FEATURES_REPLY) {
-        $obj->process_features($sock, $ofp_header, $data);
+        $obj->process_features($ofp_header, $data);
         print "Switch Connected. Datapath ID: " . $obj->get_formatted_datapath_id() . "\n";
     } elsif ($ofp_header->{type} == OFPT_ECHO_REQUEST) {
-        $obj->echo_reply($sock, $ofp_header);
+        $obj->echo_reply($ofp_header);
     } elsif ($ofp_header->{type} == OFPT_PACKET_IN) {
-        $obj->packet_in($sock, $ofp_header, $data);
+        $of_class->packet_in($obj, $ofp_header, $data);
     } elsif ($ofp_header->{type} == OFPT_GET_CONFIG_REPLY) {
-        $obj->process_config($sock, $ofp_header, $data);
+        $obj->process_config($ofp_header, $data);
     } else {
         print Dumper($ofp_header);
     }

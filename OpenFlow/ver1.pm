@@ -13,6 +13,7 @@ my $c = Convert::Binary::C->new( ByteOrder => 'BigEndian',
                                  LongSize  => 4,
                                  ShortSize => 2,);
 
+
 $c->parse_file('OpenFlow/openflowv1.h');
 
 $c->tag('ofp_switch_features.datapath_id', Format => 'Binary');
@@ -21,35 +22,64 @@ $c->tag('ofp_phy_port.name', Format => 'String');
 
 
 use enum qw(:OFPT_
-                HELLO
-                ERROR
-                ECHO_REQUEST
-                ECHO_REPLY
-                EXPERIMENTER
-                FEATURES_REQUEST
-                FEATURES_REPLY
-                GET_CONFIG_REQUEST
-                GET_CONFIG_REPLY
-                SET_CONFIG
-                PACKET_IN
-                FLOW_REMOVED
-                PORT_STATUS
-                PACKET_OUT
-                FLOW_MOD
-                GROUP_MOD
-                PORT_MOD
-                TABLE_MOD
-                STATS_REQUEST
-                STATS_REPLY
-                BARRIER_REQUEST
-                BARRIER_REPLY
-                QUEUE_GET_CONFIG_REQUEST
-                QUEUE_GET_CONFIG_REPLY
-    );
+    HELLO
+    ERROR
+    ECHO_REQUEST
+    ECHO_REPLY
+    EXPERIMENTER
+    FEATURES_REQUEST
+    FEATURES_REPLY
+    GET_CONFIG_REQUEST
+    GET_CONFIG_REPLY
+    SET_CONFIG
+    PACKET_IN
+    FLOW_REMOVED
+    PORT_STATUS
+    PACKET_OUT
+    FLOW_MOD
+    GROUP_MOD
+    PORT_MOD
+    TABLE_MOD
+    STATS_REQUEST
+    STATS_REPLY
+    BARRIER_REQUEST
+    BARRIER_REPLY
+    QUEUE_GET_CONFIG_REQUEST
+    QUEUE_GET_CONFIG_REPLY
+);
 
 use enum qw(:OFPR_
     NO_MATCH
     ACTION
+);
+
+
+use enum  qw(:OFPP_
+    MAX=0xFF00
+    IN_PORT=0xFFF8
+    TABLE=0xFFF9
+    NORMAL=0xFFFA
+    FLOOD=0xFFFB
+    ALL=0xFFFC
+    CONTROLLER=0xFFFD
+    LOCAL=0xFFFE
+    NONE=0xFFFF
+);
+
+use enum qw(:OFPAT_
+    OUTPUT
+    SET_VLAN_VID
+    SET_VLAN_PCP
+    STRIP_VLAN
+    SET_DL_SRC
+    SET_DL_DST
+    SET_NW_SRC
+    SET_NW_DST
+    SET_NW_TOS
+    SET_TP_SRC
+    SET_TP_DST
+    ENQUEUE
+    VENDOR=0xFFFF
 );
 
 my $datapath_id;
@@ -64,6 +94,7 @@ my $ports = {};
 sub new {
     my $class = shift;
     my $self  = {
+        sock => shift,
     };
 
     return bless $self, $class;
@@ -71,37 +102,33 @@ sub new {
 
 sub hello {
     my $self = shift;
-    my $sock = shift;
     my $ofp_header = shift;
 
     my $response = pack("CCnN", 1, OFPT_HELLO, 8, $ofp_header->{xid});
-    $sock->send($response);
+    $self->{sock}->send($response);
 
-    request_features($self, $sock, $ofp_header);
-    request_config($self, $sock, $ofp_header);
+    request_features($self, $ofp_header);
+    request_config($self, $ofp_header);
 }
 
 sub echo_reply {
     my $self = shift;
-    my $sock = shift;
     my $ofp_header = shift;
 
     my $response = pack("CCnN", 1, OFPT_ECHO_REPLY, 8, $ofp_header->{xid});
-    $sock->send($response);
+    $self->{sock}->send($response);
 }
 
 sub request_features() {
     my $self = shift;
-    my $sock = shift;
     my $ofp_header = shift;
 
     my $response = pack("CCnN", 1, OFPT_FEATURES_REQUEST, 8, $ofp_header->{xid});
-    $sock->send($response);
+    $self->{sock}->send($response);
 }
 
 sub process_features() {
     my $self = shift;
-    my $sock = shift;
     my $ofp_header = shift;
     my $data = shift;
 
@@ -121,22 +148,21 @@ sub process_features() {
         $ports->{$unpacked->{ports}[$key]->{port_no}}->{config} = $unpacked->{ports}[$key]->{config};
         $ports->{$unpacked->{ports}[$key]->{port_no}}->{peer} = $unpacked->{ports}[$key]->{peer};
     }
+
 }
 
 sub request_config() {
     my $self = shift;
-    my $sock = shift;
     my $ofp_header = shift;
     my $data = shift;
 
     my $response = pack("CCnN", 1, OFPT_GET_CONFIG_REQUEST, 8, $ofp_header->{xid});
 
-    $sock->send($response);
+    $self->{sock}->send($response);
 }
 
 sub process_config() {
     my $self = shift;
-    my $sock = shift;
     my $ofp_header = shift;
     my $data = shift;
     
@@ -148,7 +174,6 @@ sub process_config() {
 
 sub request_flows() {
     my $self = shift;
-    my $sock = shift;
     my $ofp_header = shift;
     my $data = shift;
 
@@ -182,20 +207,33 @@ sub request_flows() {
 
 }
 
-sub packet_in() {
+sub parse_packet_in() {
     my $self = shift;
-    my $sock = shift;
-    my $ofp_header = shift;
     my $data = shift;
 
-    my $unpacked = $c->unpack('ofp_packet_in', $data);
-#    print Dumper $unpacked;
-
-    if ($unpacked->{reason} == OFPR_NO_MATCH) {
-        print "Looking for a match..\n";
-    }
+    return $c->unpack('ofp_packet_in', $data);
 }
 
+sub flood() {
+    my $self = shift;
+    my $buffer_id = shift;
+    my $in_port = shift;
+    my $ofp_header = shift;
+
+    my $output = {type => OFPAT_OUTPUT, len => 8, port => OFPP_FLOOD };
+    my $ofp_packet_out = {buffer_id => $buffer_id, in_port => $in_port, actions_len => 8}; #, actions => $output};
+
+    my $ofp_action_output = $c->pack('ofp_action_output', $output);
+
+    $ofp_packet_out = $c->pack('ofp_packet_out', $ofp_packet_out);
+    $ofp_packet_out = pack ("C16", unpack("C8", $ofp_packet_out), unpack("C8", $ofp_action_output));
+
+
+    my $response = pack("CCnNC16", 1, OFPT_PACKET_OUT, 24, $ofp_header->{xid}, unpack ("C16", $ofp_packet_out));
+
+    $self->{sock}->send($response);
+
+}
 
 sub get_datapath_id () {
     return $datapath_id;

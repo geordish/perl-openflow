@@ -47,14 +47,21 @@ struct ofp_packet_out {
     unsigned long buffer_id;
     unsigned short in_port;
     unsigned short actions_len;
-    struct ofp_action_header actions[1];
-    unsigned char data[];
+//    struct ofp_action_header actions[];
+//    unsigned char data[];
 };
 
 struct ofp_action_header {
     unsigned short type;
     unsigned short len;
     unsigned char pad[4];
+};
+
+struct ofp_action_output {
+    unsigned short type;
+    unsigned short len;
+    unsigned short port;
+    unsigned short max_len;
 };
 
 struct ofp_switch_config {
