@@ -20,13 +20,14 @@ $c->tag('ofp_switch_features.datapath_id', Format => 'Binary');
 $c->tag('ofp_phy_port.hw_addr', Format => 'Binary');
 $c->tag('ofp_phy_port.name', Format => 'String');
 
+my $xid = 0;
 
 use enum qw(:OFPT_
     HELLO
     ERROR
     ECHO_REQUEST
     ECHO_REPLY
-    EXPERIMENTER
+    VENDOR
     FEATURES_REQUEST
     FEATURES_REPLY
     GET_CONFIG_REQUEST
@@ -37,9 +38,7 @@ use enum qw(:OFPT_
     PORT_STATUS
     PACKET_OUT
     FLOW_MOD
-    GROUP_MOD
     PORT_MOD
-    TABLE_MOD
     STATS_REQUEST
     STATS_REPLY
     BARRIER_REQUEST
@@ -81,6 +80,53 @@ use enum qw(:OFPAT_
     ENQUEUE
     VENDOR=0xFFFF
 );
+
+use enum qw(:OFPFC_
+    ADD
+    MODIFY
+    MODIFY_STRICT
+    DELETE
+    DELETE_STRICT
+);
+
+use enum qw(:OFPFF_
+    SEND_FLOW_REM=1<<0
+    CHECK_OVERLAP=1<<1
+    EMERG=1<<2
+);
+
+use enum qw(:OFPST_
+    DESC
+    FLOW
+    AGGREGATE
+    TABLE
+    PORT
+    QUEUE
+    VENDOR=0xffff
+);
+
+my $ofp_flow_wildcards = {
+    'OFPFW_IN_PORT'      => 1 << 0,
+    'OFPFW_DL_PORT'      => 1 << 1,
+    'OFPFW_DL_SRC'       => 1 << 2,
+    'OFPFW_DL_DST'       => 1 << 3,
+    'OFPFW_DL_TYPE'      => 1 << 4,
+    'OFPFW_NW_PROTO'     => 1 << 5,
+    'OFPFW_TP_SRC'       => 1 << 6,
+    'OFPFW_TP_DST'       => 1 << 7,
+    'OFPFW_NW_SRC_SHIFT' => 8,
+    'OFPFW_NW_SRC_BITS'  => 6,
+    'OFPFW_NW_DST_SHIFT' => 14,
+    'OFPFW_NW_DST_BITS'  => 6,
+    'OFPFW_DL_VLAN_PCP'  => 1 << 20,
+    'OFPFW_NW_TOS'       => 1 << 21,
+    'OFPFW_ALL'          => ((1 << 22) - 1),
+};
+
+$ofp_flow_wildcards->{'OFPFW_NW_SRC_MASK'}  = ((1 << $ofp_flow_wildcards->{'OFPFW_NW_SRC_BITS'} - 1) << $ofp_flow_wildcards->{'OFPFW_NW_SRC_SHIFT'});
+$ofp_flow_wildcards->{'OFPFW_NW_SRC_ALL'}   = 32 << $ofp_flow_wildcards->{'OFPFW_NW_SRC_SHIFT'};
+$ofp_flow_wildcards->{'OFPFW_NW_DST_MASK'}  = ((1 << $ofp_flow_wildcards->{'OFPFW_NW_DST_BITS'} - 1) << $ofp_flow_wildcards->{'OFPFW_NW_DST_SHIFT'});
+$ofp_flow_wildcards->{'OFPFW_NW_DST_ALL'}   = 32 << $ofp_flow_wildcards->{'OFPFW_NW_DST_SHIFT'};
 
 my $datapath_id;
 my $buffers;
@@ -172,38 +218,83 @@ sub process_config() {
     $miss_send_len = $unpacked->{miss_send_len};
 }
 
-sub request_flows() {
+
+sub get_all_flows() {
     my $self = shift;
-    my $ofp_header = shift;
-    my $data = shift;
 
-#struct ofp_match {
-#uint32_t wildcards;
-#uint16_t in_port;
-#uint8_t dl_src[OFP_ETH_ALEN];
-#uint8_t dl_dst[OFP_ETH_ALEN];
-#uint16_t dl_vlan;
-#uint8_t dl_vlan_pcp;
-#uint8_t pad1[1];
-#uint16_t dl_type;
-#uint8_t nw_tos;
-#uint8_t nw_proto;
-#uint8_t pad2[2];
-#uint32_t nw_src;
-#uint32_t nw_dst;
-#uint16_t tp_src;
-#uint16_t tp_dst;
-#};
+    my $ofp_match = { wildcards => $ofp_flow_wildcards->{'OFPFW_ALL'} };
+
+    my $flow_stats_req = { match => $ofp_match, table_id => 0xFF, out_port => OFPP_NONE};
+
+    my $ofp_flow_stats_req = $c->pack('ofp_flow_stats_request', $flow_stats_req);
+    my $response = pack("CCnNnnC44", 1, OFPT_STATS_REQUEST, 56, $xid++, OFPST_FLOW, 0,  unpack ("C44", $ofp_flow_stats_req));
+
+    $self->{sock}->send($response);
+
+}
+
+sub remove_all_flows() {
+    my $self = shift;
+
+    my $ofp_match = { wildcards => $ofp_flow_wildcards->{'OFPFW_ALL'} };
+
+    my $ofp_flow_mod = { match => $ofp_match, out_port => OFPP_NONE, command => OFPFC_DELETE };
+    $ofp_flow_mod = $c->pack('ofp_flow_mod', $ofp_flow_mod);
+
+    my $response = pack("CCnNC64", 1, OFPT_FLOW_MOD, 72 ,$xid++,  unpack("C64", $ofp_flow_mod));
+
+    $self->{sock}->send($response);
+}
+
+sub add_flow() {
+    my $self = shift;
+    my $args = shift;
+
+    my $ofp_flow_mod = { match => $args, command => OFPFC_ADD, idle_timeout => 300, hard_timeout => 900, buffer_id => -1 };
+    $ofp_flow_mod = $c->pack('ofp_flow_mod', $ofp_flow_mod);
+    my $ofp_action_output = create_ofp_action_output($self, OFPP_FLOOD);
+
+    my $response = pack("CCnNC64C8", 1, OFPT_FLOW_MOD, 80, $xid++, unpack ("C64", $ofp_flow_mod), unpack("C8", $ofp_action_output));
+
+    $self->{sock}->send($response);
 
 
-#struct ofp_flow_stats_request {
-#    #struct ofp_match match;
-#    uint8_t table_id;
-#    uint8_t pad;
-#    uint16_t out_port;
-#};
+}
 
+sub create_flow_match() {
+    my $self = shift;
+    my $wildcards = shift;
+    my $in_port = shift || undef;
+    my $dl_src = shift || undef;
+    my $dl_dst = shift || undef;
+    my $dl_vlan = shift || undef;
+    my $dl_vlan_pcp = shift || undef;
+    my $dl_type = shift || undef;
+    my $nw_tos = shift || undef;
+    my $nw_proto = shift || undef;
+    my $nw_src = shift || undef;
+    my $nw_dst = shift || undef;
+    my $tp_src = shift || undef;
+    my $tp_dst = shift || undef;
 
+    my $tmp = { wildcards   => $wildcards,
+                in_port     => $in_port,
+                dl_src      => $dl_src,
+                dl_dst      => $dl_dst,
+                dl_vlan     => $dl_vlan,
+                dl_vlan_pcp => $dl_vlan_pcp,
+                dl_type     => $dl_type,
+                nw_tos      => $nw_tos,
+                nw_proto    => $nw_proto,
+                nw_src      => $nw_src,
+                nw_dst      => $nw_dst,
+                tp_dst      => $tp_dst,
+                tp_src      => $tp_src,
+    };
+
+    my $ofp_match = $c->pack('ofp_match', $tmp);
+
+    return $ofp_match;
 
 }
 
@@ -252,6 +343,10 @@ sub get_buffers() {
 
 sub get_tables() {
     return $tables;
+}
+
+sub get_ports() {
+    return $ports;
 }
 
 sub get_formatted_datapath_id () {

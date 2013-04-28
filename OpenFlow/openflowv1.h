@@ -69,3 +69,52 @@ struct ofp_switch_config {
     unsigned short miss_send_len;
 };
 
+struct ofp_match {
+    unsigned long wildcards;
+    unsigned short in_port;
+    unsigned char dl_src[6];
+    unsigned char dl_dst[6];
+    unsigned short dl_vlan;
+    unsigned char dl_vlan_pcp;
+    unsigned char pad1[1];
+    unsigned short dl_type;
+    unsigned char nw_tos;
+    unsigned char nw_proto;
+    unsigned char pad2[2];
+    unsigned long nw_src;
+    unsigned long nw_dst;
+    unsigned short tp_src;
+    unsigned short tp_dst;
+};
+
+struct ofp_flow_mod {
+    struct ofp_match match;
+    unsigned long long cookie;
+    unsigned short command;
+    unsigned short idle_timeout;
+    unsigned short hard_timeout;
+    unsigned short priority;
+    unsigned long buffer_id;
+    unsigned short out_port;
+    unsigned short flags;
+};
+
+struct ofp_flow_stats_request {
+    struct ofp_match match;
+    unsigned char table_id;
+    unsigned char pad;
+    unsigned short out_port;
+};
+
+struct ofp_flow_mod {
+    struct ofp_match match;
+    unsigned long long cookie;
+    unsigned short command;
+    unsigned short idle_timeout;
+    unsigned short hard_timeout;
+    unsigned short priority;
+    unsigned long buffer_id;
+    unsigned short out_port;
+    unsigned short flags;
+};
+
