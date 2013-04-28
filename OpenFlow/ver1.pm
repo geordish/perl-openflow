@@ -220,9 +220,6 @@ sub flood() {
     my $in_port = shift;
     my $ofp_header = shift;
 
-
-print STDOUT "poop";
-
     my $ofp_action_output = create_ofp_action_output($self, OFPP_FLOOD);
     my $ofp_packet_out = {buffer_id => $buffer_id, in_port => $in_port, actions_len => length($ofp_action_output)};
 
@@ -239,8 +236,7 @@ print STDOUT "poop";
 sub create_ofp_action_output () {
     my $self = shift;
     my $port = shift;
-#    my $max_len = shift || 0;
-    my $max_len =  0;
+    my $max_len = shift || 0;
 
     my $output = {type => OFPAT_OUTPUT, len => 8, port => $port, max_len => $max_len };
     return $c->pack('ofp_action_output', $output);
